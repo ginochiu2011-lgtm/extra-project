@@ -21,9 +21,8 @@ const MapPlaceView = ({
   const markersRef = useRef([]);
   const geolocationRef = useRef(null);
   const [mode, setMode] = useState('places');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [userPos, setUserPos] = useState(null);
+  const [loading, setLoading] = useState(() => hasAMapKey());
+  const [error, setError] = useState(() => (hasAMapKey() ? '' : '请在 .env 中配置 VITE_AMAP_KEY'));
   const [selected, setSelected] = useState(null);
 
   const defaultCenter = [116.397428, 39.90923];
@@ -56,7 +55,6 @@ const MapPlaceView = ({
     geolocationRef.current.getCurrentPosition((status, result) => {
       if (status === 'complete') {
         const { lng, lat } = result.position;
-        setUserPos({ lng, lat });
         mapRef.current.setCenter([lng, lat]);
         mapRef.current.setZoom(15);
       } else {
@@ -74,8 +72,6 @@ const MapPlaceView = ({
 
   useEffect(() => {
     if (!hasAMapKey()) {
-      setError('请在 .env 中配置 VITE_AMAP_KEY');
-      setLoading(false);
       return;
     }
 
@@ -95,7 +91,6 @@ const MapPlaceView = ({
         geo.getCurrentPosition((status, result) => {
           if (status === 'complete') {
             const { lng, lat } = result.position;
-            setUserPos({ lng, lat });
             map.setCenter([lng, lat]);
           }
         });
