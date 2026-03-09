@@ -117,7 +117,7 @@ export const PlaceView = ({
         <>
           {/* 正式发布的场地（官方/精选） */}
           {places
-            .filter(p => !p.isOwnerSubmitted)
+            .filter(p => !p.isOwnerSubmitted && !p.hiddenInPlaceList)
             .map(p => (
               <div
                 key={p.id}
@@ -192,7 +192,7 @@ export const PlaceView = ({
             </div>
           )}
           {places
-            .filter(p => p.isOwnerSubmitted)
+            .filter(p => p.isOwnerSubmitted && !p.hiddenInPlaceList)
             .map(p => (
               <div
                 key={p.id}

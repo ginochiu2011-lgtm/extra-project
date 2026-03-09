@@ -228,7 +228,7 @@ export const ActivityDetail = ({
         <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent"></div>
       </div>
       <div className="px-6 pt-6 relative z-10">
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-2">
           <span className="px-3 py-1 bg-[#108542] text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-900/10">
             {detail.tag}
           </span>
@@ -236,6 +236,11 @@ export const ActivityDetail = ({
             <Sparkles size={10} className="text-amber-400" />
             <span className="text-[9px] font-black text-white italic">AI 匹配度 {detail.matchScore}%</span>
           </div>
+          {detail.isOfficial && (
+            <span className="px-3 py-1 rounded-lg bg-slate-900/90 text-amber-300 text-[9px] font-black uppercase tracking-widest">
+              官方合作场地
+            </span>
+          )}
         </div>
         <h1 className="text-2xl font-black mb-3 leading-tight">{detail.title}</h1>
         <div className="text-[11px] text-slate-400 font-bold mb-4 flex items-center justify-between gap-3">
@@ -336,7 +341,7 @@ export const ActivityDetail = ({
               onClick={() => onContactVenue(detail)}
               className="w-full py-3 rounded-2xl bg-slate-900 text-white text-[11px] font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
-              联系场地主 · 确认档期与费用
+              {detail.isOfficial ? '联系平台顾问 · 确认档期与费用' : '联系场地主 · 确认档期与费用'}
             </button>
           </div>
         )}

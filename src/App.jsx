@@ -572,6 +572,7 @@ export default function App() {
       return;
     }
     setShowSearch(false);
+    setShowInspiration(false);
     setSelectedActivity(null);
     setSelectedPlace(null);
     setCurrentChat(null);
@@ -1150,6 +1151,7 @@ export default function App() {
     const newActivity = {
       id: now,
       ownerId: auth.user?.id,
+      isOfficial: place.ownershipType === 'ENTERPRISE',
       tag: '场地变局',
       category: cat,
       title: `基于「${place.name}」的亲子局（Demo）`,
@@ -1167,7 +1169,7 @@ export default function App() {
       matchScore: 88,
       labels: ['场地灵感', place.category].filter(Boolean),
       venueType:
-        place.ownershipType === 'COMMERCIAL'
+        place.ownershipType === 'COMMERCIAL' || place.ownershipType === 'ENTERPRISE'
           ? 'COMMERCIAL'
           : place.ownershipType === 'PRIVATE'
           ? 'PRIVATE'
@@ -1792,8 +1794,9 @@ export default function App() {
   );
 
   const renderPlaceLegacy = () => {
-    const officialPlaces = places.filter(p => !p.isOwnerSubmitted && placeMatchesCapabilities(p));
-    const ownerPlaces = places.filter(p => p.isOwnerSubmitted && placeMatchesCapabilities(p));
+    const visiblePlaces = places.filter(p => !p.hiddenInPlaceList);
+    const officialPlaces = visiblePlaces.filter(p => !p.isOwnerSubmitted && placeMatchesCapabilities(p));
+    const ownerPlaces = visiblePlaces.filter(p => p.isOwnerSubmitted && placeMatchesCapabilities(p));
 
     const hotProposalWishes = wishes.filter(w => {
       if (!w.isProposal) return false;
@@ -1960,8 +1963,13 @@ export default function App() {
                             onClick={() => setSelectedPlace(p)}
                             className="bg-white rounded-[24px] overflow-hidden border border-slate-100 shadow-sm active:scale-[0.98] transition-all cursor-pointer"
                           >
-                            <div className="h-28 overflow-hidden">
+                            <div className="h-28 overflow-hidden relative">
                               <img src={p.cover} className="w-full h-full object-cover" alt="place" />
+                              {p.ownershipType === 'ENTERPRISE' && (
+                                <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-slate-900/80 text-white text-[8px] font-black">
+                                  官方合作
+                                </div>
+                              )}
                             </div>
                             <div className="p-3 space-y-1">
                               <h4 className="font-black text-[12px] truncate">{p.name}</h4>
@@ -3956,9 +3964,11 @@ export default function App() {
                       className="w-full py-2.5 rounded-2xl bg-[#108542]/5 text-[#108542] text-[11px] font-black flex items-center justify-center gap-2"
                     >
                       <MessageSquareHeart size={14} />
-                      私信场地主
+                      {selectedPlace.ownershipType === 'ENTERPRISE'
+                        ? '联系平台顾问 · 确认档期与合作'
+                        : '私信场地主'}
                     </button>
-                    {!selectedPlace.isOwnerSubmitted && (
+                    {!selectedPlace.isOwnerSubmitted && selectedPlace.allowDirectorCoop !== false && (
                       <button
                         type="button"
                         onClick={() => handleCreateActivityFromPlace(selectedPlace)}

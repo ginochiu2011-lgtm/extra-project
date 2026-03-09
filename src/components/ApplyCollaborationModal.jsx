@@ -9,6 +9,9 @@ export const ApplyCollaborationModal = ({ place, onClose, onConfirm }) => {
 
   if (!place) return null;
 
+  const isEnterpriseBrand =
+    place.ownershipType === 'ENTERPRISE' && place.allowDirectorCoop !== false;
+
   const toggleEquip = (key) => {
     setEquipments((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
@@ -47,19 +50,25 @@ export const ApplyCollaborationModal = ({ place, onClose, onConfirm }) => {
             <ChevronLeft size={18} />
           </button>
           <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-            APPLY FOR COLLAB
+            {isEnterpriseBrand ? 'BRAND PARTNERSHIP' : 'APPLY FOR COLLAB'}
           </span>
         </div>
 
-        <h2 className="text-lg font-black mb-1">向「{place.name}」发起合作申请</h2>
+        <h2 className="text-lg font-black mb-1">
+          {isEnterpriseBrand ? '向「' : '向「'}
+          {place.name}
+          {isEnterpriseBrand ? '」发起品牌联名合作意向' : '」发起合作申请'}
+        </h2>
         <p className="text-[11px] text-slate-500 font-bold mb-4">
-          先简单勾选你想要的人数、时间和设备，支付 9.9 元预约意向金后，平台会协助撮合你和场地主进一步确认方案。
+          {isEnterpriseBrand
+            ? '先简单勾选你希望覆盖的家庭数、人群时间段和对场地支持的需求，平台会以品牌联名视角帮你与场地方对齐方案（Demo）。'
+            : '先简单勾选你想要的人数、时间和设备，支付 9.9 元预约意向金后，平台会协助撮合你和场地主进一步确认方案。'}
         </p>
 
         <div className="space-y-4 mb-4">
           <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              <Users size={12} /> 预计参与家庭数
+              <Users size={12} /> {isEnterpriseBrand ? '预计覆盖家庭数 / 人群' : '预计参与家庭数'}
             </p>
             <div className="flex flex-wrap gap-2">
               {['1-2', '3-5', '5-8', '8 组以上'].map((opt) => (
@@ -81,7 +90,7 @@ export const ApplyCollaborationModal = ({ place, onClose, onConfirm }) => {
 
           <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              <Calendar size={12} /> 大致时间
+              <Calendar size={12} /> {isEnterpriseBrand ? '期望档期' : '大致时间'}
             </p>
             <div className="flex flex-wrap gap-2">
               {[
@@ -107,7 +116,7 @@ export const ApplyCollaborationModal = ({ place, onClose, onConfirm }) => {
 
           <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              <Tv size={12} /> 你大致需要哪些设备？
+              <Tv size={12} /> {isEnterpriseBrand ? '你大致需要哪些支持？' : '你大致需要哪些设备？'}
             </p>
             <div className="flex flex-wrap gap-2">
               {[
@@ -138,9 +147,13 @@ export const ApplyCollaborationModal = ({ place, onClose, onConfirm }) => {
             <div className="flex items-center gap-2">
               <CheckCircle2 size={16} className="text-emerald-400" />
               <div>
-                <p className="text-[11px] font-black">预约意向金</p>
+                <p className="text-[11px] font-black">
+                  {isEnterpriseBrand ? '品牌联名锁定金' : '预约意向金'}
+                </p>
                 <p className="text-[9px] text-white/70">
-                  9.9 元用于锁定合作意向，后续抵扣场地费用（Demo）。
+                  {isEnterpriseBrand
+                    ? '9.9 元用于锁定品牌联名合作名额，后续由平台协助走真实合同 / 支付流程（Demo）。'
+                    : '9.9 元用于锁定合作意向，后续抵扣场地费用（Demo）。'}
                 </p>
               </div>
             </div>
