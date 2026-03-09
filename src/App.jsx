@@ -245,7 +245,7 @@ export default function App() {
         a.id === activityId
           ? {
               ...a,
-              lifecycleStatus: 'finished',
+              lifecycleStatus: 'FINISHED',
               statusText:
                 typeof a.joined === 'number'
                   ? `已结束 · 共${a.joined}组家庭参与（Demo）`
@@ -284,7 +284,7 @@ export default function App() {
         a.id === activity.id
           ? {
               ...a,
-              lifecycleStatus: 'canceled',
+              lifecycleStatus: 'CANCELED',
               statusText: '已取消 · 本次保证金将进入审核流程（Demo）',
             }
           : a
@@ -350,8 +350,8 @@ export default function App() {
       )
     );
 
-    // 当活动状态为 ONGOING 时，通过上传 Recap 来触发完成态
-    if (act.lifecycleStatus === 'ONGOING') {
+    // 当活动状态为 STARTED 时，通过上传 Recap 来触发完成态
+    if (act.lifecycleStatus === 'STARTED') {
       completeActivity(activityId);
     }
 
@@ -1037,11 +1037,12 @@ export default function App() {
     // 1）同期开局数量限制（例如信用分 < 70 时只允许 1 场）
     if (priv.limitActive) {
       const ownerId = auth.user?.id || auth.userProfile.id;
-      const activeCount = activities.filter(a =>
+    const activeCount = activities.filter(a =>
         a.ownerId === ownerId &&
         a.lifecycleStatus &&
-        a.lifecycleStatus !== 'finished' &&
-        a.lifecycleStatus !== 'canceled'
+        a.lifecycleStatus !== 'FINISHED' &&
+        a.lifecycleStatus !== 'CANCELED' &&
+        a.lifecycleStatus !== 'ARCHIVED'
       ).length;
 
       if (activeCount >= priv.limitActive) {
@@ -1156,7 +1157,7 @@ export default function App() {
       price: 0,
       capacity: 10,
       joined: 0,
-      lifecycleStatus: 'online',
+      lifecycleStatus: 'ONLINE',
       stats: [70, 60, 50, 60, 80],
       cover: place.cover,
       location: place.address || place.city || place.name,
@@ -1355,6 +1356,19 @@ export default function App() {
       setShowAuthModal(true);
       return;
     }
+
+    // ① 局长领取心愿：将心愿从 OPEN 推进到 IN_PROGRESS
+    setWishes(prev =>
+      prev.map(w =>
+        w.id === wish.id
+          ? {
+              ...w,
+              status: w.status === 'OPEN' ? 'IN_PROGRESS' : w.status,
+            }
+          : w
+      )
+    );
+
     const now = Date.now();
     const newActivity = {
       id: now,
@@ -1367,7 +1381,7 @@ export default function App() {
       price: 0,
       capacity: 5,
       joined: 0,
-      lifecycleStatus: 'online',
+      lifecycleStatus: 'ONLINE',
       stats: [70, 60, 60, 50, 50],
       cover:
         'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?auto=format&fit=crop&w=800&q=80',
@@ -1379,13 +1393,13 @@ export default function App() {
     };
     handleCreateActivity(newActivity);
 
-    // 将对应心愿标记为已撮合成功 / 已生成活动
+    // ② 活动创建成功：将对应心愿标记为已基于该心愿生成活动
     setWishes(prev =>
       prev.map(w =>
         w.id === wish.id
           ? {
               ...w,
-              status: 'MATCHED',
+              status: 'ACTIVITY_CREATED',
             }
           : w
       )
@@ -1529,6 +1543,23 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
     setCooperations(prev => [record, ...prev]);
+
+    // 将最近一笔该场地的 Venue Order 从 PENDING_VENUE 推进到 CONFIRMED（独立交易状态机 Demo）
+    setOrders(prev => {
+      const idx = prev.findIndex(
+        o =>
+          o.placeId === session.placeId &&
+          o.directorId === auth.user?.id &&
+          o.status === 'PENDING_VENUE'
+      );
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        status: 'CONFIRMED',
+      };
+      return next;
+    });
 
     // 业务侧：增加场地与局长的合作次数、成交额等统计（Demo）
     if (session.placeId != null) {
@@ -2546,8 +2577,14 @@ export default function App() {
         </p>
       </div>
 
-       <div className="space-y-4 mb-6">
-          <div className="bg-slate-900 rounded-[32px] p-6 text-white relative overflow-hidden shadow-2xl">
+      <div className="space-y-6 mb-6">
+        {/* 我参与的局 · 参与者视角 */}
+        <div>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+            我参与的局
+          </h3>
+          <div className="space-y-4">
+            <div className="bg-slate-900 rounded-[32px] p-6 text-white relative overflow-hidden shadow-2xl">
             <div className="relative z-10 flex justify-between items-end">
               <div>
                 <p className="text-[8px] font-black text-white/40 tracking-[0.2em] mb-1 uppercase">EP 能量资产</p>
@@ -2570,59 +2607,62 @@ export default function App() {
             </p>
           </div>
 
-          <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100 flex flex-col justify-between">
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center justify-between">
-              娃的兴趣雷达
-              <span className="text-[9px] text-[#108542] font-black italic">
-                平均
-                {((auth.userProfile.stats.reduce((a, b) => a + b, 0) / auth.userProfile.stats.length) | 0)}
-                %
-              </span>
-            </p>
-            <div className="flex items-center justify-between gap-4">
-              <div className="relative w-24 h-24 flex items-center justify-center">
-                <RadarChart stats={auth.userProfile.stats} size={90} />
-                <span className="absolute -top-1 left-1/2 -translate-x-1/2 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                  艺术
-                </span>
-                <span className="absolute top-[14px] -right-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                  自然
-                </span>
-                <span className="absolute bottom-[10px] -right-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                  科学
-                </span>
-                <span className="absolute bottom-[10px] -left-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                  运动
-                </span>
-                <span className="absolute top-[14px] -left-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                  策展
-                </span>
-              </div>
-              <div className="text-[9px] text-slate-400 font-black space-y-1 leading-relaxed">
-                <p className="text-slate-500">用于匹配更适合你娃的局与场域。</p>
-              </div>
-            </div>
-          </div>
-
-          {orders.length > 0 && (
             <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100 flex flex-col justify-between">
-              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center justify之间">
-                场地预约订单（Demo）
-                <span className="text-[10px] text-[#108542] font-black">
-                  共 {orders.length} 单
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center justify-between">
+                娃的兴趣雷达
+                <span className="text-[9px] text-[#108542] font-black italic">
+                  平均
+                  {((auth.userProfile.stats.reduce((a, b) => a + b, 0) / auth.userProfile.stats.length) | 0)}
+                  %
                 </span>
               </p>
-              <div className="space-y-2">
-                {orders.slice(0, 3).map(order => (
+              <div className="flex items-center justify-between gap-4">
+                <div className="relative w-24 h-24 flex items-center justify-center">
+                  <RadarChart stats={auth.userProfile.stats} size={90} />
+                  <span className="absolute -top-1 left-1/2 -translate-x-1/2 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    艺术
+                  </span>
+                  <span className="absolute top-[14px] -right-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    自然
+                  </span>
+                  <span className="absolute bottom-[10px] -right-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    科学
+                  </span>
+                  <span className="absolute bottom-[10px] -left-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    运动
+                  </span>
+                  <span className="absolute top-[14px] -left-1 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    策展
+                  </span>
+                </div>
+                <div className="text-[9px] text-slate-400 font-black space-y-1 leading-relaxed">
+                  <p className="text-slate-500">用于匹配更适合你娃的局与场域。</p>
+                </div>
+              </div>
+            </div>
+
+            {orders.length > 0 && (
+          <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100 flex flex-col justify-between">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center justify之间">
+              场地预约订单（Demo）
+              <span className="text-[10px] text-[#108542] font-black">
+                共 {orders.length} 单
+              </span>
+            </p>
+            <div className="space-y-2">
+              {orders.slice(0, 3).map(order => {
+                let statusText = order.status;
+                if (order.status === 'PENDING_VENUE') statusText = '待场地主确认';
+                else if (order.status === 'CONFIRMED') statusText = '场地已确认合作';
+                else if (order.status === 'SETTLED') statusText = '已结算';
+                return (
                   <div
                     key={order.id}
                     className="flex items-center justify-between text-[10px] text-slate-600 font-bold"
                   >
                     <div className="flex-1 min-w-0 pr-3">
                       <p className="truncate">{order.placeName}</p>
-                      <p className="text-[9px] text-slate-400">
-                        状态：{order.status === 'AWAITING_VENUE_CONFIRM' ? '待场地主确认' : order.status}
-                      </p>
+                      <p className="text-[9px] text-slate-400">状态：{statusText}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-[9px] text-slate-400 uppercase">
@@ -2630,11 +2670,19 @@ export default function App() {
                       </p>
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          )}
+          </div>
+        )}
+          </div>
+        </div>
 
+        {/* 我创建的局 · 局长视角 */}
+        <div>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+            我创建的局
+          </h3>
           <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100 flex flex-col justify-between">
             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center justify-between">
               局长信用评级
@@ -2778,7 +2826,13 @@ export default function App() {
               </div>
             </div>
           </div>
+        </div>
 
+        {/* 我的场地 · 场地主视角 */}
+        <div>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+            我的场地
+          </h3>
           {cooperations.length > 0 && (
             <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100 flex flex-col justify-between">
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center justify-between">
@@ -2815,7 +2869,8 @@ export default function App() {
               </div>
             </div>
           )}
-       </div>
+        </div>
+      </div>
 
        <div className="mb-10">
          <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center justify-between">
@@ -2883,7 +2938,7 @@ export default function App() {
         price: 0,
         capacity: 5,
         joined: 0,
-        lifecycleStatus: 'draft',
+        lifecycleStatus: 'DRAFT',
         stats: [60, 60, 60, 60, 60],
         cover:
           'https://images.unsplash.com/photo-1515165562835-c4c9e0737eaa?auto=format&fit=crop&w=800&q=80',
@@ -2903,6 +2958,14 @@ export default function App() {
 
     return (
       <form className="space-y-4 mt-2" onSubmit={handleSubmit}>
+        <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3 flex flex-col gap-1">
+          <p className="text-[10px] font-black text-amber-700">
+            你正在以【局长】身份发起一场局
+          </p>
+          <p className="text-[9px] font-bold text-amber-700/90">
+            你需要负责：时间 · 规则 · 组织（现场沟通与收尾）
+          </p>
+        </div>
         <div className="space-y-2">
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
             一句话给这个局起个名字 *
@@ -3530,7 +3593,7 @@ export default function App() {
                       return {
                         ...a,
                         joined: nextJoined,
-                        lifecycleStatus: isFull ? 'full' : a.lifecycleStatus,
+                        lifecycleStatus: isFull ? 'FULL' : a.lifecycleStatus,
                         statusText: (Number.isFinite(cap) && cap > 0)
                           ? (isFull ? `已满员 · 已报${nextJoined}组` : a.statusText)
                           : a.statusText,
@@ -4569,13 +4632,13 @@ export default function App() {
                     prev && prev.id === place.id ? { ...prev, hasApplied: true } : prev
                   );
                   
-                  // 创建一个场地合作订单，等待场地主确认（Demo）
+                  // 创建一个场地合作订单（Venue Order），等待场地主确认（Demo）
                   const order = {
                     id: `order-${Date.now()}`,
                     placeId: place.id,
                     placeName: place.name,
                     directorId: auth.user?.id,
-                    status: 'AWAITING_VENUE_CONFIRM',
+                    status: 'PENDING_VENUE',
                     payload,
                     createdAt: new Date().toISOString(),
                   };

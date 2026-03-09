@@ -84,6 +84,14 @@ export const PlaceOnboardModal = ({ onSubmit, onClose }) => {
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
+          <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3 flex flex-col gap-1 mb-2">
+            <p className="text-[10px] font-black text-amber-700">
+              你正在以【场地主】身份提供场地
+            </p>
+            <p className="text-[9px] font-bold text-amber-700/90">
+              你将：接收局长合作申请 · 获得合作收益（Demo）
+            </p>
+          </div>
           {/* 基础信息 */}
           <div className="space-y-3">
             <div className="space-y-1.5">

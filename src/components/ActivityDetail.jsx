@@ -329,7 +329,7 @@ export const ActivityDetail = ({
           </div>
         </div>
 
-        {venueType === 'COMMERCIAL' && onContactVenue && (
+        {venueType === 'COMMERCIAL' && isHost && onContactVenue && (
           <div className="mb-4">
             <button
               type="button"
@@ -355,10 +355,22 @@ export const ActivityDetail = ({
           </div>
         )}
 
-        {venueType === 'PRIVATE' && !isHost && !joined && (
-          <p className="mb-4 text-[9px] text-slate-400 font-bold">
-            当前仅展示大致区域，完整地址将在报名成功后由局长私下告知。
-          </p>
+        {!isHost && !joined && (
+          <div className="mb-4 space-y-2">
+            <div className="rounded-2xl border border-dashed border-sky-300 bg-sky-50 px-3 py-3 flex flex-col gap-1">
+              <p className="text-[10px] font-black text-sky-800">
+                你正在以【探索家】身份加入活动
+              </p>
+              <p className="text-[9px] font-bold text-sky-800/90">
+                这一刻，你是来体验的家长，专注感受就好。
+              </p>
+            </div>
+            {venueType === 'PRIVATE' && (
+              <p className="text-[9px] text-slate-400 font-bold">
+                当前仅展示大致区域，完整地址将在报名成功后由局长私下告知。
+              </p>
+            )}
+          </div>
         )}
 
         {isHost && venueType !== 'COMMERCIAL' && (

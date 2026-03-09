@@ -121,10 +121,15 @@ export const PlaceView = ({
             .map(p => (
               <div
                 key={p.id}
-                className="bg白 rounded-[24px] overflow-hidden border border-slate-100 shadow-sm flex active:scale-[0.98] transition-all"
+                className="bg-white rounded-[24px] overflow-hidden border border-slate-100 shadow-sm flex active:scale-[0.98] transition-all"
               >
-                <div className="w-32 h-32 shrink-0">
+                <div className="w-32 h-32 shrink-0 relative">
                   <img src={p.cover} className="w-full h-full object-cover" alt="place" />
+                  {p.ownershipType === 'ENTERPRISE' && (
+                    <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-slate-900/80 text-white text-[8px] font-black">
+                      官方合作
+                    </div>
+                  )}
                 </div>
                 <div className="p-4 flex-1 flex flex-col justify-between">
                   <div>
@@ -146,6 +151,18 @@ export const PlaceView = ({
                       <MapPin size={10} />
                       {p.distance} · {p.category}
                     </p>
+                    {Array.isArray(p.labels) && p.labels.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {p.labels.slice(0, 3).map(label => (
+                          <span
+                            key={label}
+                            className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black"
+                          >
+                            #{label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="mt-2 flex items-center justify-end">
                     <button
@@ -181,7 +198,7 @@ export const PlaceView = ({
                 key={p.id}
                 className="bg-white rounded-[24px] overflow-hidden border border-slate-100 shadow-sm flex active:scale-[0.98] transition-all"
               >
-                <div className="w-32 h-32 shrink-0">
+                <div className="w-32 h-32 shrink-0 relative">
                   <img src={p.cover} className="w-full h-full object-cover" alt="place" />
                 </div>
                 <div className="p-4 flex-1 flex flex-col justify-between">
@@ -211,6 +228,18 @@ export const PlaceView = ({
                       <p className="mt-1 text-[9px] text-slate-500 font-bold line-clamp-1">
                         {p.suggestedUse}
                       </p>
+                    )}
+                    {Array.isArray(p.labels) && p.labels.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {p.labels.slice(0, 3).map(label => (
+                          <span
+                            key={label}
+                            className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black"
+                          >
+                            #{label}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     {(p.contactName || p.availableSlots) && (
                       <div className="mt-1 p-2 rounded-2xl bg-slate-50 border border-slate-100 space-y-0.5">
