@@ -193,6 +193,9 @@ export default function App() {
   const [pendingActivity, setPendingActivity] = useState(null);
   const [wishToRecap, setWishToRecap] = useState(null);
   const [wishRecapImage, setWishRecapImage] = useState('');
+  const [showWishRecapDialog, setShowWishRecapDialog] = useState(false);
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [showPlaceOnboard, setShowPlaceOnboard] = useState(false);
   const [inspirationLikes, setInspirationLikes] = useState({});
   const [displayReliability, setDisplayReliability] = useState(() => {
     const stats =
@@ -1272,7 +1275,6 @@ export default function App() {
           ? {
               ...w,
               likeCount: (w.likeCount || 0) + 1,
-              participantCount: (w.participantCount || 1) + 1,
             }
           : w
       )
@@ -1360,18 +1362,6 @@ export default function App() {
       return;
     }
 
-    // ① 局长领取心愿：将心愿从 OPEN 推进到 IN_PROGRESS
-    setWishes(prev =>
-      prev.map(w =>
-        w.id === wish.id
-          ? {
-              ...w,
-              status: w.status === 'OPEN' ? 'IN_PROGRESS' : w.status,
-            }
-          : w
-      )
-    );
-
     const now = Date.now();
     const newActivity = {
       id: now,
@@ -1394,9 +1384,25 @@ export default function App() {
       labels: ['心愿变局', ...(wish.scenes || [])].slice(0, 3),
       venueType: 'PUBLIC',
     };
-    handleCreateActivity(newActivity);
 
-    // ② 活动创建成功：将对应心愿标记为已基于该心愿生成活动
+    // 户外 / 宠物类局仍然走安全协议弹窗，待最终确认创建成功后再推进心愿状态
+    if (isOutdoorOrPetActivity(newActivity)) {
+      const base = { ...newActivity };
+      delete base._agreedSafety;
+      delete base._confirmedInsurance;
+      setPendingActivity({
+        ...base,
+        _agreedSafety: false,
+        _confirmedInsurance: false,
+      });
+      setUiState({ modal: 'SAFETY', payload: { sourceWishId: wish.id } });
+      return null;
+    }
+
+    // 非户外：直接尝试创建；仅在成功时推进心愿状态，失败则完全回滚
+    const ok = createActivityWithPrivileges(newActivity);
+    if (!ok) return null;
+
     setWishes(prev =>
       prev.map(w =>
         w.id === wish.id
@@ -1407,6 +1413,7 @@ export default function App() {
           : w
       )
     );
+
     return newActivity;
   };
 
