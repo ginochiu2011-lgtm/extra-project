@@ -103,12 +103,10 @@ export default function App() {
   const [isMapView, setIsMapView] = useState(false); // 地图视图（已移除，仅保留占位以防其他地方引用）
   const auth = useAuthState();
   const authDispatch = useAuthDispatch();
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
   const [showChildProfile, setShowChildProfile] = useState(false);
   const lastViewBumpByCategoryRef = useRef(new Map());
   const isMountedRef = useRef(true);
-  const [showPlaceOnboard, setShowPlaceOnboard] = useState(false);
   const [wishForm, setWishForm] = useState({
     title: '',
     scenes: [],
@@ -185,8 +183,6 @@ export default function App() {
   const [wishToCurate, setWishToCurate] = useState(null);
   const [showLanguageSettings, setShowLanguageSettings] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [showCustomActivity, setShowCustomActivity] = useState(false);
-  const [applyPlace, setApplyPlace] = useState(null);
   const [wishForPlaceOnboard, setWishForPlaceOnboard] = useState(null);
   const [respondWishForVenue, setRespondWishForVenue] = useState(null);
   const [venueRespondFamilies, setVenueRespondFamilies] = useState('3-5 组家庭');
@@ -195,9 +191,7 @@ export default function App() {
   const [userLocation, setUserLocation] = useState(null);
   const [locationError, setLocationError] = useState('');
   const [pendingActivity, setPendingActivity] = useState(null);
-  const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [wishToRecap, setWishToRecap] = useState(null);
-  const [showWishRecapDialog, setShowWishRecapDialog] = useState(false);
   const [wishRecapImage, setWishRecapImage] = useState('');
   const [inspirationLikes, setInspirationLikes] = useState({});
   const [displayReliability, setDisplayReliability] = useState(() => {
@@ -223,6 +217,12 @@ export default function App() {
   const [depositAmount, setDepositAmount] = useState(0);
   const [depositError, setDepositError] = useState('');
   const [orders, setOrders] = useState([]);
+
+  // 统一管理顶层 UI 弹窗状态（后续逐步替代 showXxx 系列 useState）
+  const [uiState, setUiState] = useState({
+    modal: null,
+    payload: null,
+  });
 
   // 将心愿池状态持久化到 localStorage，避免刷新后状态丢失
   useEffect(() => {
@@ -455,7 +455,9 @@ export default function App() {
 
   const handleAuthSuccess = ({ token, user, fromRegister }) => {
     authDispatch({ type: 'LOGIN_SUCCESS', payload: { token, user } });
-    setShowAuthModal(false);
+    setUiState(prev =>
+      prev.modal === 'AUTH' ? { modal: null, payload: null } : prev
+    );
     if (fromRegister) {
       const childRaw = localStorage.getItem(`extra_child_profile_${user.id}`);
       if (childRaw) {
@@ -523,7 +525,7 @@ export default function App() {
     }
     authDispatch({ type: 'LOGOUT' });
     setShowChildProfile(false);
-    setShowAuthModal(false);
+    setUiState({ modal: null, payload: null });
     setActiveTab('explore');
   };
 
@@ -568,11 +570,10 @@ export default function App() {
 
   const handleTabChange = (tab) => {
     if (tab === 'me' && !auth.token) {
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
-    setShowSearch(false);
-    setShowInspiration(false);
+    setUiState({ modal: null, payload: null });
     setSelectedActivity(null);
     setSelectedPlace(null);
     setCurrentChat(null);
@@ -650,7 +651,7 @@ export default function App() {
     e.preventDefault();
     if (!auth.token) {
       setWishError('请先登录后再发布心愿池。');
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
     if (!wishForm.title.trim()) {
@@ -1137,7 +1138,7 @@ export default function App() {
 
   const handleCreateActivityFromPlace = (place) => {
     if (!auth.token) {
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
     const now = Date.now();
@@ -1281,7 +1282,7 @@ export default function App() {
   const handleMessageWishOwner = (wish) => {
     if (!auth.token) {
       setPendingAction({ type: 'MESSAGE_WISH_OWNER', wishId: wish.id });
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
     const convId = `wish-owner-${wish.id}`;
@@ -1311,7 +1312,7 @@ export default function App() {
   const handleStartBuddyGroup = (wish) => {
     if (!auth.token) {
       setPendingAction({ type: 'START_BUDDY_GROUP', wishId: wish.id });
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
     const convId = `wish-${wish.id}`;
@@ -1355,7 +1356,7 @@ export default function App() {
   const handleCreateActivityFromWish = (wish) => {
     if (!auth.token) {
       setPendingAction({ type: 'CREATE_ACTIVITY_FROM_WISH', wishId: wish.id });
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
 
@@ -1468,7 +1469,7 @@ export default function App() {
   const handleContactPlaceOwner = (place) => {
     if (!auth.token) {
       setPendingAction({ type: 'CONTACT_PLACE_OWNER', placeId: place.id });
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
     // 如果该场地已提交过合作申请，则优先跳转到已有的场地会话，避免重复提交
@@ -1480,12 +1481,12 @@ export default function App() {
         return;
       }
     }
-    setApplyPlace(place);
+    setUiState({ modal: 'APPLY_COLLAB', payload: { place } });
   };
 
   const handleMarkCooperation = (session) => {
     if (!auth.token) {
-      setShowAuthModal(true);
+      setUiState({ modal: 'AUTH', payload: null });
       return;
     }
     setCooperationSession(session);
@@ -1630,7 +1631,7 @@ export default function App() {
               type="button"
               aria-label="搜索活动、场地和心愿"
               onClick={() => {
-                setShowSearch(true);
+                setUiState({ modal: 'SEARCH', payload: null });
                 setSearchQuery('');
               }}
               className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 border border-slate-100"
@@ -1641,7 +1642,7 @@ export default function App() {
               type="button"
               aria-label="查看灵感相册"
               onClick={() => {
-                setShowInspiration(true);
+                setUiState({ modal: 'INSPIRATION', payload: null });
                 setHasNewInspiration(false);
               }}
               className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 border border-slate-100 relative"
@@ -1904,12 +1905,12 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (!auth.token) {
-                            setPendingAction({ type: 'RESPOND_WISH_FOR_VENUE', wishId: w.id });
-                            setShowAuthModal(true);
-                            return;
-                          }
-                          setRespondWishForVenue(w);
+                  if (!auth.token) {
+                    setPendingAction({ type: 'RESPOND_WISH_FOR_VENUE', wishId: w.id });
+                    setUiState({ modal: 'AUTH', payload: null });
+                    return;
+                  }
+                  setRespondWishForVenue(w);
                         }}
                         className="px-2.5 py-1 rounded-full bg-[#108542] text-white text-[9px] font-black active:scale-95 transition-all"
                       >
@@ -2902,7 +2903,7 @@ export default function App() {
        <div className="space-y-3">
          <button
            type="button"
-           onClick={() => setShowCustomActivity(true)}
+          onClick={() => setUiState({ modal: 'CUSTOM_ACTIVITY', payload: null })}
            className="w-full py-5 bg-[#108542] text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 active:scale-95 transition-all shadow-xl shadow-green-900/10"
          >
             <Plus size={18}/> 发起我的自研局
@@ -3048,11 +3049,13 @@ export default function App() {
         ) : (
           <div className="h-full flex flex-col animate-in fade-in duration-500">
             {/* 需要登录时手动展示登录/注册弹窗 */}
-            {showAuthModal && !auth.token && <AuthModal onSuccess={handleAuthSuccess} />}
-            {showInspiration && (
+            {uiState.modal === 'AUTH' && !auth.token && (
+              <AuthModal onSuccess={handleAuthSuccess} />
+            )}
+            {uiState.modal === 'INSPIRATION' && (
               <div
                 className="absolute inset-0 z-40 bg-black/40 backdrop-blur-sm flex flex-col"
-                onClick={() => setShowInspiration(false)}
+                onClick={() => setUiState({ modal: null, payload: null })}
               >
                 <div
                   className="bg-white rounded-b-3xl px-5 pt-10 pb-4 shadow-lg"
@@ -3060,9 +3063,9 @@ export default function App() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <button
+                        <button
                         type="button"
-                        onClick={() => setShowInspiration(false)}
+                        onClick={() => setUiState({ modal: null, payload: null })}
                         className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100"
                       >
                         <ChevronLeft size={18} />
@@ -3152,10 +3155,10 @@ export default function App() {
                 </div>
               </div>
             )}
-            {showLanguageSettings && (
+            {uiState.modal === 'LANGUAGE' && (
               <div
                 className="absolute inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-stretch"
-                onClick={() => setShowLanguageSettings(false)}
+                onClick={() => setUiState({ modal: null, payload: null })}
               >
                 <div
                   className="w-full h-full bg-white rounded-none md:rounded-t-[32px] p-6 pb-8 overflow-y-auto"
@@ -3164,7 +3167,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-4">
                     <button
                       type="button"
-                      onClick={() => setShowLanguageSettings(false)}
+                      onClick={() => setUiState({ modal: null, payload: null })}
                       className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-50 text-slate-500 border border-slate-100 active:scale-90 active:bg-slate-100 transition-all"
                       aria-label="关闭语言设置"
                     >
@@ -3218,10 +3221,10 @@ export default function App() {
                 </div>
               </div>
             )}
-            {showAccountSettings && (
+            {uiState.modal === 'ACCOUNT' && (
               <div
                 className="absolute inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-stretch"
-                onClick={() => setShowAccountSettings(false)}
+                onClick={() => setUiState({ modal: null, payload: null })}
               >
                 <div
                   className="w-full h-full bg-white rounded-none md:rounded-t-[32px] p-6 pb-8 overflow-y-auto"
@@ -3230,7 +3233,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-4">
                     <button
                       type="button"
-                      onClick={() => setShowAccountSettings(false)}
+                      onClick={() => setUiState({ modal: null, payload: null })}
                       className="w-9 h-9 rounded-full flex items中心 justify-center bg-slate-50 text-slate-500 border border-slate-100 active:scale-90 active:bg-slate-100 transition-all"
                       aria-label="关闭设置"
                     >
@@ -3270,10 +3273,10 @@ export default function App() {
                 </div>
               </div>
             )}
-            {showSearch && (
+            {uiState.modal === 'SEARCH' && (
               <div
                 className="absolute inset-0 z-40 bg-black/30 backdrop-blur-sm flex flex-col"
-                onClick={() => setShowSearch(false)}
+                onClick={() => setUiState({ modal: null, payload: null })}
               >
                 <div
                   className="bg-white rounded-b-3xl px-5 pt-10 pb-4 shadow-lg"
@@ -3282,7 +3285,7 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowSearch(false)}
+                      onClick={() => setUiState({ modal: null, payload: null })}
                       className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100"
                     >
                       <ChevronLeft size={18} />
@@ -3335,7 +3338,7 @@ export default function App() {
                                     type="button"
                                     onClick={() => {
                                       addRecentSearch(searchQuery);
-                                      setShowSearch(false);
+                                      setUiState({ modal: null, payload: null });
                                       setActiveTab('explore');
                                       setSelectedActivity(a);
                                     }}
@@ -3374,7 +3377,7 @@ export default function App() {
                                     type="button"
                                     onClick={() => {
                                       addRecentSearch(searchQuery);
-                                      setShowSearch(false);
+                                      setUiState({ modal: null, payload: null });
                                       setActiveTab('place');
                                       const full = places.find(pl => pl.id === p.id);
                                       if (full) {
@@ -3418,7 +3421,7 @@ export default function App() {
                                     type="button"
                                     onClick={() => {
                                       addRecentSearch(searchQuery);
-                                      setShowSearch(false);
+                                      setUiState({ modal: null, payload: null });
                                       if (p.convoId) {
                                         const convo = conversations.find(c => c.id === p.convoId);
                                         if (convo) setCurrentChat(convo);
@@ -3465,7 +3468,7 @@ export default function App() {
                                     type="button"
                                     onClick={() => {
                                       addRecentSearch(searchQuery);
-                                      setShowSearch(false);
+                                      setUiState({ modal: null, payload: null });
                                       setActiveTab('explore');
                                       setExploreFilter('全部');
                                       setExploreTopicFilter(t);
@@ -4622,12 +4625,12 @@ export default function App() {
               </div>
             )}
 
-            {applyPlace && (
+            {uiState.modal === 'APPLY_COLLAB' && uiState.payload?.place && (
               <ApplyCollaborationModal
-                place={applyPlace}
-                onClose={() => setApplyPlace(null)}
+                place={uiState.payload.place}
+                onClose={() => setUiState({ modal: null, payload: null })}
                 onConfirm={(place, payload) => {
-                  setApplyPlace(null);
+                  setUiState({ modal: null, payload: null });
                   createPlaceConversation(place, payload);
 
                   // 将该场地标记为「已提交合作申请」，用于跨组件实时反馈
@@ -4658,10 +4661,10 @@ export default function App() {
                 }}
               />
             )}
-            {showCustomActivity && (
+            {uiState.modal === 'CUSTOM_ACTIVITY' && (
               <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[70] flex items-stretch"
-                onClick={() => setShowCustomActivity(false)}
+                onClick={() => setUiState({ modal: null, payload: null })}
               >
                 <div
                   className="w-full h-full bg-white rounded-none md:rounded-t-[32px] p-6 pb-8 overflow-y-auto"
@@ -4670,7 +4673,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-4">
                     <button
                       type="button"
-                      onClick={() => setShowCustomActivity(false)}
+                      onClick={() => setUiState({ modal: null, payload: null })}
                       className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-50 text-slate-500 border border-slate-100 active:scale-90 active:bg-slate-100 transition-all"
                       aria-label="关闭自研局面板"
                     >
@@ -4690,9 +4693,9 @@ export default function App() {
                     auth={auth}
                     onCreate={(activity) => {
                       handleCreateActivity(activity);
-                      setShowCustomActivity(false);
+                      setUiState({ modal: null, payload: null });
                     }}
-                    onCancel={() => setShowCustomActivity(false)}
+                    onCancel={() => setUiState({ modal: null, payload: null })}
                   />
                 </div>
               </div>
