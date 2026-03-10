@@ -18,6 +18,11 @@ import { PlaceTabView } from './components/PlaceTabView';
 import { FeedTabView } from './components/FeedTabView';
 import { MeTabView } from './components/MeTabView';
 import { useAuthDispatch, useAuthState } from './context/AuthContext.jsx';
+import {
+  applyActivityCreationPolicy,
+  calculateDirectorScore,
+  getDirectorPrivileges,
+} from './services/directorPolicy';
 import { 
   Compass, MapPin, MessageSquareHeart, CircleUser, 
   ChevronLeft, Share2, Sparkles, Search, Camera, 
@@ -51,45 +56,28 @@ const CATEGORY_INDEX_MAP = {
   '非常策展': 4,
 };
 
-const calculateDirectorScore = (stats) => {
-  const {
-    total_published = 0,
-    total_completed = 0,
-    recap_count = 0,
-    rating_avg = 0,
-    venue_rating_avg = 0,
-    featured_recaps = 0,
-  } = stats || {};
 
-  if (total_published <= 0) {
-    const base = 80 + featured_recaps * 2;
-    return Math.min(100, Math.max(0, base));
-  }
 
-  const completionRate = total_completed > 0 ? total_completed / total_published : 0;
-  const recapPerCompleted = total_completed > 0 ? Math.min(1, recap_count / total_completed) : 0;
-  const parentRatingNorm = Math.min(1, Math.max(0, rating_avg / 5));
-  const venueRatingNorm = Math.min(1, Math.max(0, venue_rating_avg / 5));
-
-  let score =
-    completionRate * 40 +
-    recapPerCompleted * 30 +
-    parentRatingNorm * 20 +
-    venueRatingNorm * 10 +
-    featured_recaps * 2;
-
-  score = Math.max(0, Math.min(100, score));
-  return Math.round(score);
+// 简单前端搜索索引：按字段预生成可搜索文本，避免在每次输入时重复拼接
+const buildTextIndex = (items, buildText) => {
+  return items.map((item) => ({
+    item,
+    text: buildText(item).filter(Boolean).map(String).join(' ').toLowerCase(),
+  }));
 };
 
-const getDirectorPrivileges = (score) => {
-  if (score >= 90) {
-    return { depositFree: true, badge: 'Gold' };
+const runTextSearch = (query, indexedItems, limit) => {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const res = [];
+  for (let i = 0; i < indexedItems.length; i += 1) {
+    const entry = indexedItems[i];
+    if (entry.text.includes(q)) {
+      res.push(entry.item);
+      if (limit && res.length >= limit) break;
+    }
   }
-  if (score < 70) {
-    return { doubleDeposit: true, limitActive: 1 };
-  }
-  return {};
+  return res;
 };
 
 // --- 主程序 ---
@@ -194,18 +182,9 @@ export default function App() {
   const [wishToRecap, setWishToRecap] = useState(null);
   const [wishRecapImage, setWishRecapImage] = useState('');
   const [showWishRecapDialog, setShowWishRecapDialog] = useState(false);
-  const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [showPlaceOnboard, setShowPlaceOnboard] = useState(false);
   const [inspirationLikes, setInspirationLikes] = useState({});
-  const [displayReliability, setDisplayReliability] = useState(() => {
-    const stats =
-      auth.user?.directorStats ||
-      auth.userProfile.directorStats ||
-      {};
-    return (
-      stats.reliability_score ?? calculateDirectorScore(stats)
-    );
-  });
+  const [displayReliability, setDisplayReliability] = useState(80);
   const [placeCapabilitiesFilter, setPlaceCapabilitiesFilter] = useState([]);
   const [radarPulse, setRadarPulse] = useState(false);
   const [cooperations, setCooperations] = useState([]);
@@ -227,7 +206,7 @@ export default function App() {
     payload: null,
   });
 
-  // 将心愿池状态持久化到 localStorage，避免刷新后状态丢失
+  // 将心愿池状态持久化到 localStorage（仅作为缓存 / 离线视图）
   useEffect(() => {
     try {
       localStorage.setItem('extra_wishes', JSON.stringify(wishes));
@@ -236,38 +215,86 @@ export default function App() {
     }
   }, [wishes]);
 
+  // 优先以服务端心愿池为真相源，localStorage 仅作启动占位
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWishesFromServer = async () => {
+      try {
+        const res = await fetch('/api/wishes', {
+          headers: auth.token
+            ? {
+                Authorization: `Bearer ${auth.token}`,
+              }
+            : undefined,
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : data?.wishes;
+        if (!Array.isArray(list) || cancelled) return;
+        setWishes(list);
+      } catch {
+        // 忽略加载错误，继续使用本地缓存 / Demo 数据
+      }
+    };
+
+    loadWishesFromServer();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.token]);
+
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
     };
   }, []);
 
+  // 根据当前用户的真实局长信用分，刷新展示用分数（支持登录/登出切换）
+  useEffect(() => {
+    const stats =
+      auth.user?.directorStats ||
+      auth.userProfile.directorStats ||
+      {};
+    const score =
+      stats.reliability_score ?? calculateDirectorScore(stats);
+    setDisplayReliability(score);
+  }, [auth.user, auth.userProfile]);
+
   const completeActivity = (activityId) => {
+    let completed = null;
     setActivities(prev =>
-      prev.map(a =>
-        a.id === activityId
-          ? {
-              ...a,
-              lifecycleStatus: 'FINISHED',
-              statusText:
-                typeof a.joined === 'number'
-                  ? `已结束 · 共${a.joined}组家庭参与（Demo）`
-                  : '已结束（Demo）',
-            }
-          : a
-      )
+      prev.map(a => {
+        if (a.id !== activityId) return a;
+        const updated = {
+          ...a,
+          lifecycleStatus: 'FINISHED',
+          statusText:
+            typeof a.joined === 'number'
+              ? `已结束 · 共${a.joined}组家庭参与（Demo）`
+              : '已结束（Demo）',
+        };
+        completed = updated;
+        return updated;
+      })
     );
 
     // 活动结束后，如果是基于某条心愿生成的局，则自动结算该心愿
-    const act = activities.find(a => a.id === activityId);
-    if (act && act.sourceWishId) {
+    if (completed && completed.sourceWishId) {
       setWishes(prev =>
         prev.map(w =>
-          w.id === act.sourceWishId
+          w.id === completed.sourceWishId
             ? {
                 ...w,
                 status: 'COMPLETED',
-                hasRecap: w.hasRecap || Boolean(act.recap && act.recap.images && act.recap.images.length),
+              hasRecap:
+                w.hasRecap ||
+                Boolean(
+                  completed.recap &&
+                    completed.recap.images &&
+                    completed.recap.images.length
+                ),
               }
             : w
         )
@@ -451,7 +478,6 @@ export default function App() {
 
   const normalizeCurators = (list = []) =>
     list.map(c => ({
-      reliability_score: 80,
       ...c,
       reliability_score: c.reliability_score ?? 80,
     }));
@@ -474,50 +500,6 @@ export default function App() {
       setShowChildProfile(true);
     }
 
-    // 登录成功后，自动恢复一次待执行操作（Demo）
-    if (pendingAction) {
-      const action = pendingAction;
-      setPendingAction(null);
-      switch (action.type) {
-        case 'MESSAGE_WISH_OWNER': {
-          const wish = wishes.find(w => w.id === action.wishId);
-          if (wish) {
-            handleMessageWishOwner(wish);
-          }
-          break;
-        }
-        case 'START_BUDDY_GROUP': {
-          const wish = wishes.find(w => w.id === action.wishId);
-          if (wish) {
-            handleStartBuddyGroup(wish);
-          }
-          break;
-        }
-        case 'CREATE_ACTIVITY_FROM_WISH': {
-          const wish = wishes.find(w => w.id === action.wishId);
-          if (wish) {
-            handleCreateActivityFromWish(wish);
-          }
-          break;
-        }
-        case 'CONTACT_PLACE_OWNER': {
-          const place = places.find(p => p.id === action.placeId);
-          if (place) {
-            handleContactPlaceOwner(place);
-          }
-          break;
-        }
-        case 'RESPOND_WISH_FOR_VENUE': {
-          const wish = wishes.find(w => w.id === action.wishId);
-          if (wish) {
-            setRespondWishForVenue(wish);
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    }
   };
 
   const handleLogout = () => {
@@ -734,10 +716,22 @@ export default function App() {
         }
       });
     } catch (err) {
+      // 后端接口缺失或网络异常时，仍然在本地创建心愿（Demo 乐观写入）
       await fakeDelay(500);
       if (!isMountedRef.current) return;
-      const reason = err instanceof Error ? err.message : String(err);
-      setWishError(`发布失败（${reason}），心愿未保存，请稍后重试。`);
+      setWishes(prev => [newWish, ...prev]);
+      setWishForm({
+        title: '',
+        scenes: [],
+        vibes: [],
+        timePrefs: [],
+        area: '',
+        mode: 'find_buddies',
+        isProposal: false,
+        suggestedArea: '',
+        targetPeopleCount: 4,
+      });
+      setWishError('');
     } finally {
       if (isMountedRef.current) {
         setWishLoading(false);
@@ -752,6 +746,42 @@ export default function App() {
   const [places, setPlaces] = useState([]);
   const [placesLoading, setPlacesLoading] = useState(true);
   const [placesError, setPlacesError] = useState('');
+
+  // 登录成功后，自动恢复一次待执行操作（确保 auth.token 已更新）
+  useEffect(() => {
+    if (!auth.token || !pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+    switch (action.type) {
+      case 'MESSAGE_WISH_OWNER': {
+        const wish = wishes.find((w) => w.id === action.wishId);
+        if (wish) handleMessageWishOwner(wish);
+        break;
+      }
+      case 'START_BUDDY_GROUP': {
+        const wish = wishes.find((w) => w.id === action.wishId);
+        if (wish) handleStartBuddyGroup(wish);
+        break;
+      }
+      case 'CREATE_ACTIVITY_FROM_WISH': {
+        const wish = wishes.find((w) => w.id === action.wishId);
+        if (wish) handleCreateActivityFromWish(wish);
+        break;
+      }
+      case 'CONTACT_PLACE_OWNER': {
+        const place = places.find((p) => p.id === action.placeId);
+        if (place) handleContactPlaceOwner(place);
+        break;
+      }
+      case 'RESPOND_WISH_FOR_VENUE': {
+        const wish = wishes.find((w) => w.id === action.wishId);
+        if (wish) setRespondWishForVenue(wish);
+        break;
+      }
+      default:
+        break;
+    }
+  }, [auth.token, pendingAction, wishes, places]);
 
   useEffect(() => {
     if (!userLocation) return;
@@ -1031,26 +1061,20 @@ export default function App() {
 
   // 统一在这里根据局长信用分应用「免押金 / 双倍押金 / 同期开局上限」等规则
   const createActivityWithPrivileges = (activity) => {
-    const stats =
-      auth.user?.directorStats ||
-      auth.userProfile.directorStats ||
-      {};
-    const score =
-      stats.reliability_score ?? calculateDirectorScore(stats);
-    const priv = getDirectorPrivileges(score);
+    const ownerId = auth.user?.id || auth.userProfile.id;
+    const directorStats =
+      auth.user?.directorStats || auth.userProfile.directorStats || {};
 
-    // 1）同期开局数量限制（例如信用分 < 70 时只允许 1 场）
-    if (priv.limitActive) {
-      const ownerId = auth.user?.id || auth.userProfile.id;
-    const activeCount = activities.filter(a =>
-        a.ownerId === ownerId &&
-        a.lifecycleStatus &&
-        a.lifecycleStatus !== 'FINISHED' &&
-        a.lifecycleStatus !== 'CANCELED' &&
-        a.lifecycleStatus !== 'ARCHIVED'
-      ).length;
+    const decision = applyActivityCreationPolicy({
+      activity,
+      directorStats,
+      ownerId,
+      existingActivities: activities,
+      baseDeposit: 200,
+    });
 
-      if (activeCount >= priv.limitActive) {
+    if (!decision.ok) {
+      if (decision.reason === 'ACTIVE_LIMIT') {
         window.alert(
           '当前信用分较低，同期开局数量已达上限，请先结束或取消已有活动后再创建新局（Demo）。'
         );
@@ -1059,8 +1083,8 @@ export default function App() {
           '开局受限提醒',
           '由于当前局长信用分较低，本次未能创建新局：同期开局不得超过 1 场（Demo）。'
         );
-        setConversations(prev => {
-          const existing = prev.find(c => c.id === 'sys-director-priv');
+        setConversations((prev) => {
+          const existing = prev.find((c) => c.id === 'sys-director-priv');
           if (existing) {
             const updated = {
               ...existing,
@@ -1068,7 +1092,7 @@ export default function App() {
               lastMsg: msg.text,
               time: '刚刚',
             };
-            return prev.map(c => (c.id === existing.id ? updated : c));
+            return prev.map((c) => (c.id === existing.id ? updated : c));
           }
           return [
             {
@@ -1083,39 +1107,19 @@ export default function App() {
             ...prev,
           ];
         });
-
-        return false;
       }
+
+      return false;
     }
 
-    // 2）根据信用分计算保证金：高信用免押金，低信用双倍保证金
-    const baseDeposit = 200; // Demo 基础保证金金额（单位：元）
-    let depositRequired = 0;
-    let depositMultiplier = 1;
+    const activityWithPolicy = decision.activityWithPolicy;
 
-    if (priv.depositFree) {
-      depositRequired = 0;
-    } else if (priv.doubleDeposit) {
-      depositMultiplier = 2;
-      depositRequired = baseDeposit * 2;
-    } else {
-      depositRequired = baseDeposit;
-    }
-
-    const activityWithPolicy = {
-      ...activity,
-      depositRequired,
-      depositMultiplier,
-      depositStatus: depositRequired > 0 ? 'UNPAID' : 'WAIVED',
-    };
-
-    setActivities(prev => [activityWithPolicy, ...prev]);
+    setActivities((prev) => [activityWithPolicy, ...prev]);
     setSelectedActivity(activityWithPolicy);
 
-    // 3）需要缴纳保证金时，弹出模拟支付弹窗
-    if (depositRequired > 0) {
+    if (decision.depositRequired > 0) {
       setDepositActivity(activityWithPolicy);
-      setDepositAmount(depositRequired);
+      setDepositAmount(decision.depositRequired);
       setDepositError('');
     }
 
@@ -1133,7 +1137,7 @@ export default function App() {
         _agreedSafety: false,
         _confirmedInsurance: false,
       });
-      setShowSafetyModal(true);
+      setUiState({ modal: 'SAFETY', payload: null });
       return;
     }
     createActivityWithPrivileges(activity);
@@ -1190,70 +1194,96 @@ export default function App() {
     }
   }, [conversations, currentChat]);
 
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim();
-    if (!q) {
-      return { activities: [], places: [], people: [], topics: [] };
-    }
-    const lower = q.toLowerCase();
-
-    const activitiesMatches = activities.filter((a) => {
-      const texts = [
+  // 搜索索引：避免在输入时重复对 activities / places 做全表扫描拼接文本
+  const activitySearchIndex = useMemo(
+    () =>
+      buildTextIndex(activities, (a) => [
         a.title,
         a.description,
         a.area,
         a.category,
         ...(a.labels || []),
-      ].filter(Boolean).map(String);
-      return texts.some(t => t.includes(q) || t.toLowerCase().includes(lower));
-    });
+      ]),
+    [activities]
+  );
 
-    const placesMatches = places.filter((p) => {
-      const texts = [
+  const placeSearchIndex = useMemo(
+    () =>
+      buildTextIndex(places, (p) => [
         p.name,
         p.suggestedUse,
         p.area,
         p.ownerName,
         ...(p.tags || []),
-      ].filter(Boolean).map(String);
-      return texts.some(t => t.includes(q) || t.toLowerCase().includes(lower));
-    });
+      ]),
+    [places]
+  );
 
-    const peopleMap = new Map();
-    activities.forEach(a => {
+  const peopleAll = useMemo(() => {
+    const map = new Map();
+    activities.forEach((a) => {
       if (a.host) {
-        peopleMap.set(a.host, { name: a.host, role: '活动发起人', from: 'activity' });
+        map.set(a.host, { name: a.host, role: '活动发起人', from: 'activity' });
       }
     });
-    conversations.forEach(c => {
+    conversations.forEach((c) => {
       if (c.type === 'private' && c.name) {
-        peopleMap.set(c.name, { name: c.name, role: '已在对话的家长/局长', from: 'chat', convoId: c.id });
+        map.set(c.name, {
+          name: c.name,
+          role: '已在对话的家长/局长',
+          from: 'chat',
+          convoId: c.id,
+        });
       }
     });
-    (matchedCurators || []).forEach(c => {
-      peopleMap.set(c.name, { name: c.name, role: c.title || '推荐局长', from: 'curator' });
+    (matchedCurators || []).forEach((c) => {
+      map.set(c.name, {
+        name: c.name,
+        role: c.title || '推荐局长',
+        from: 'curator',
+      });
     });
-    const peopleAll = Array.from(peopleMap.values());
-    const peopleMatches = peopleAll.filter(p =>
-      [p.name, p.role].filter(Boolean).some(t => t.includes(q) || t.toLowerCase().includes(lower))
+    return Array.from(map.values());
+  }, [activities, conversations, matchedCurators]);
+
+  const topicsAll = useMemo(() => {
+    const topicSet = new Set();
+    activities.forEach((a) => (a.labels || []).forEach((l) => topicSet.add(l)));
+    wishes.forEach((w) => {
+      (w.scenes || []).forEach((s) => topicSet.add(s));
+      (w.vibes || []).forEach((v) => topicSet.add(v));
+    });
+    return Array.from(topicSet);
+  }, [activities, wishes]);
+
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      return { activities: [], places: [], people: [], topics: [] };
+    }
+
+    const activitiesMatches = runTextSearch(q, activitySearchIndex, 5);
+    const placesMatches = runTextSearch(q, placeSearchIndex, 5);
+
+    const lower = q.toLowerCase();
+    const peopleMatches = peopleAll.filter((p) =>
+      [p.name, p.role]
+        .filter(Boolean)
+        .map(String)
+        .some((t) => t.includes(q) || t.toLowerCase().includes(lower))
     );
 
-    const topicSet = new Set();
-    activities.forEach(a => (a.labels || []).forEach(l => topicSet.add(l)));
-    wishes.forEach(w => {
-      (w.scenes || []).forEach(s => topicSet.add(s));
-      (w.vibes || []).forEach(v => topicSet.add(v));
-    });
-    const topicsAll = Array.from(topicSet);
-    const topicsMatches = topicsAll.filter(t => t.includes(q) || t.toLowerCase().includes(lower));
+    const topicsMatches = topicsAll.filter(
+      (t) => t.includes(q) || t.toLowerCase().includes(lower)
+    );
 
     return {
-      activities: activitiesMatches.slice(0, 5),
-      places: placesMatches.slice(0, 5),
+      activities: activitiesMatches,
+      places: placesMatches,
       people: peopleMatches.slice(0, 5),
       topics: topicsMatches.slice(0, 8),
     };
-  }, [searchQuery, activities, places, conversations, matchedCurators, wishes]);
+  }, [searchQuery, activitySearchIndex, placeSearchIndex, peopleAll, topicsAll]);
 
   const addRecentSearch = (term) => {
     const t = (term || '').trim();
@@ -3086,7 +3116,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                <div className="flex-1 bg黑 overflow-y-auto no-scrollbar" onClick={(e) => e.stopPropagation()}>
+                <div className="flex-1 bg-slate-50 overflow-y-auto no-scrollbar" onClick={(e) => e.stopPropagation()}>
                   {inspirationImages.length === 0 ? (
                     <div className="px-5 pt-4 pb-6">
                       <p className="text-[10px] text-slate-400 font-black">
@@ -4823,12 +4853,14 @@ export default function App() {
                 </div>
               </div>
             )}
-            {showSafetyModal && pendingActivity && (
+            {uiState.modal === 'SAFETY' && pendingActivity && (
               <div
                 className="absolute inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-end md:items-center justify-center"
                 onClick={() => {
-                  setShowSafetyModal(false);
                   setPendingActivity(null);
+                  setUiState(prev =>
+                    prev.modal === 'SAFETY' ? { modal: null, payload: null } : prev
+                  );
                 }}
               >
                 <div
@@ -4953,8 +4985,20 @@ export default function App() {
 
                       const ok = createActivityWithPrivileges(enriched);
                       if (ok) {
+                        const sourceWishId = uiState?.payload?.sourceWishId;
+                        if (sourceWishId != null) {
+                          setWishes(prev =>
+                            prev.map(w =>
+                              w.id === sourceWishId
+                                ? { ...w, status: 'ACTIVITY_CREATED' }
+                                : w
+                            )
+                          );
+                        }
                         setPendingActivity(null);
-                        setShowSafetyModal(false);
+                        setUiState(prev =>
+                          prev.modal === 'SAFETY' ? { modal: null, payload: null } : prev
+                        );
                       }
                     }}
                   >
@@ -4967,7 +5011,7 @@ export default function App() {
             {false && (
               <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-end animate-in fade-in duration-200"
-                onClick={closeWishSheet}
+                onClick={() => {}}
               >
                 <div
                   className="w-full bg-white rounded-t-[40px] p-8 pb-12 animate-in slide-in-from-bottom duration-300"
@@ -5275,37 +5319,33 @@ export default function App() {
                           },
                         ]
                       : undefined;
-                  let createdPlace = null;
-                  setPlaces(prev => {
-                    const next = [
-                      {
-                        id: newId,
-                        name: data.name || '未命名场地',
-                        category: data.features?.includes('花园') || data.features?.includes('露台')
-                          ? '自然户外'
-                          : '城市空间',
-                        rating: 4.8,
-                        distance: '· 由场地主提供',
-                        address: data.city || '待补充',
-                        match: 90,
-                        cover: coverFromPhotos || fallbackCover,
-                        isOwnerSubmitted: true,
-                        suggestedUse: suggestedUseText,
-                        caseImages,
-                        cases: ownerCases,
-                        contactName: data.contactName || '场地主',
-                        contactPhone: data.contactPhone || '',
-                        contactWeChat: data.contactWeChat || '',
-                        availableSlots: data.availableSlots || '',
-                      },
-                      ...prev,
-                    ];
-                    createdPlace = next[0];
-                    return next;
-                  });
+
+                  const newPlace = {
+                    id: newId,
+                    name: data.name || '未命名场地',
+                    category:
+                      data.features?.includes('花园') || data.features?.includes('露台')
+                        ? '自然户外'
+                        : '城市空间',
+                    rating: 4.8,
+                    distance: '· 由场地主提供',
+                    address: data.city || '待补充',
+                    match: 90,
+                    cover: coverFromPhotos || fallbackCover,
+                    isOwnerSubmitted: true,
+                    suggestedUse: suggestedUseText,
+                    caseImages,
+                    cases: ownerCases,
+                    contactName: data.contactName || '场地主',
+                    contactPhone: data.contactPhone || '',
+                    contactWeChat: data.contactWeChat || '',
+                    availableSlots: data.availableSlots || '',
+                  };
+
+                  setPlaces(prev => [newPlace, ...prev]);
 
                   // 如果是从某条高热度心愿点击“我能提供场地”进来的，入驻后立即基于该心愿创建一个 Demo 活动
-                  if (wishForPlaceOnboard && createdPlace) {
+                  if (wishForPlaceOnboard) {
                     handleCreateActivity({
                       source: 'wish_proposal',
                       wish: wishForPlaceOnboard,
