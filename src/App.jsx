@@ -748,6 +748,10 @@ export default function App() {
   const [placesError, setPlacesError] = useState('');
 
   // 登录成功后，自动恢复一次待执行操作（确保 auth.token 已更新）
+  // 说明：下面调用的 handler（handleMessageWishOwner 等）未加入依赖数组，
+  // 依赖于最新一轮渲染闭包中的实现；若后续对这些 handler 加 useCallback，
+  // 需要同步审查这里的依赖，否则可能出现 stale closure。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!auth.token || !pendingAction) return;
     const action = pendingAction;
@@ -1347,6 +1351,8 @@ export default function App() {
       setUiState({ modal: 'AUTH', payload: null });
       return;
     }
+    // 并发保护：仅允许 OPEN 状态的心愿进入「成团」路径
+    if (wish.status !== 'OPEN') return;
     const convId = `wish-${wish.id}`;
     const existing = conversations.find(c => c.id === convId);
     if (existing) {
@@ -1391,6 +1397,9 @@ export default function App() {
       setUiState({ modal: 'AUTH', payload: null });
       return;
     }
+
+    // 并发保护：仅允许 OPEN 状态的心愿被局长领取创建活动
+    if (wish.status !== 'OPEN') return;
 
     const now = Date.now();
     const newActivity = {
@@ -4596,7 +4605,7 @@ export default function App() {
                     将本次合作的大致金额和平台抽佣比例记录下来，后续可以据此对账（Demo，本地记录，不会真实扣款）。
                   </p>
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 mb-4 space-y-1.5">
-                    <p className="text-[9px] font黑 text-slate-400 uppercase tracking-widest">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                       合作场地
                     </p>
                     <p className="text-[12px] font-black text-slate-900">
@@ -5008,276 +5017,7 @@ export default function App() {
               </div>
             )}
             
-            {false && (
-              <div
-                className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-end animate-in fade-in duration-200"
-                onClick={() => {}}
-              >
-                <div
-                  className="w-full bg-white rounded-t-[40px] p-8 pb-12 animate-in slide-in-from-bottom duration-300"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div className="w-10 h-1 bg-slate-100 rounded-full mx-auto mb-6"></div>
-                  <h2 className="text-xl font-black mb-1 italic">EXTRA WISH</h2>
-                  <p className="text-[#108542] text-[8px] font-black mb-6 tracking-widest uppercase italic tracking-tighter underline">
-                    用一句话，说说你最近想和谁去哪儿遛娃
-                  </p>
 
-                  <form className="space-y-4" onSubmit={handleWishSubmit}>
-                    {/* 心愿池灵感区块（整合进心愿池模块内部） */}
-                    {wishes.length > 0 && (
-                      <div className="space-y-2 mb-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                            来自心愿池的灵感
-                          </p>
-                          <span className="text-[9px] text-slate-300 font-black">
-                            {wishes.length} 条
-                          </span>
-                        </div>
-                        <div className="flex gap-3 overflow-x-auto no-scrollbar">
-                          {wishes.slice(0, 3).map(w => (
-                            <div
-                              key={w.id}
-                              className="shrink-0 w-60 p-3 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between gap-2"
-                            >
-                              <p className="text-[11px] font-bold text-slate-800 line-clamp-2">
-                                {w.title}
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {[...(w.scenes || []), ...(w.vibes || []), w.area]
-                                  .filter(Boolean)
-                                  .slice(0, 3)
-                                  .map(tag => (
-                                    <span
-                                      key={tag}
-                                      className="px-2 py-0.5 rounded-full bg-white text-[8px] font-black text-slate-400 border border-slate-100"
-                                    >
-                                      {tag}
-                                    </span>
-                                  ))}
-                              </div>
-                              <div className="flex items-center justify-between mt-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleWishLike(w.id)}
-                                  className="text-[9px] font-black text-slate-400"
-                                >
-                                  我也想 · {w.likeCount || 0}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCreateActivityFromWish(w)}
-                                  className="text-[9px] font-black text-[#108542]"
-                                >
-                                  基于此发起组局
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* 一句话心愿 */}
-                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-3">
-                        <div className="text-slate-400 mt-1">
-                          <Target size={14} />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                          一句话心愿 *
-                          </p>
-                          <input
-                          value={wishForm.title}
-                            onChange={e =>
-                            setWishForm(prev => ({ ...prev, title: e.target.value }))
-                            }
-                          placeholder="例如：周六想去徐汇滨江溜娃+喝咖啡，有人一起吗？"
-                            className="w-full bg-transparent text-xs font-bold text-slate-800 outline-none"
-                          />
-                        </div>
-                      </div>
-
-                    {/* 场景 & 氛围标签 */}
-                    <div className="space-y-3">
-                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                          大致场景（可多选）
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {WISH_SCENE_OPTIONS.map(opt => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() =>
-                                setWishForm(prev => ({
-                                  ...prev,
-                                  scenes: prev.scenes.includes(opt)
-                                    ? prev.scenes.filter(v => v !== opt)
-                                    : [...prev.scenes, opt],
-                                }))
-                              }
-                              className={`px-3 py-1 rounded-full text-[10px] font-black border ${
-                                wishForm.scenes.includes(opt)
-                                  ? 'bg-[#108542] text-white border-[#108542]'
-                                  : 'bg-white text-slate-500 border-slate-200'
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                          氛围偏好（可多选）
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {WISH_VIBE_OPTIONS.map(opt => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() =>
-                                setWishForm(prev => ({
-                                  ...prev,
-                                  vibes: prev.vibes.includes(opt)
-                                    ? prev.vibes.filter(v => v !== opt)
-                                    : [...prev.vibes, opt],
-                                }))
-                              }
-                              className={`px-3 py-1 rounded-full text-[10px] font-black border ${
-                               wishForm.vibes.includes(opt)
-                                  ? 'bg-[#108542] text-white border-[#108542]'
-                                  : 'bg-white text-slate-500 border-slate-200'
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 时间 & 区域 */}
-                    <div className="space-y-3">
-                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                          什么时候方便
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {WISH_TIME_OPTIONS.map(opt => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() =>
-                                setWishForm(prev => ({
-                                  ...prev,
-                                  timePrefs: prev.timePrefs.includes(opt)
-                                    ? prev.timePrefs.filter(v => v !== opt)
-                                    : [...prev.timePrefs, opt],
-                                }))
-                              }
-                              className={`px-3 py-1 rounded-full text-[10px] font-black border ${
-                                wishForm.timePrefs.includes(opt)
-                                  ? 'bg-[#108542] text-white border-[#108542]'
-                                  : 'bg-white text-slate-500 border-slate-200'
-                              }`}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-3">
-                        <div className="text-slate-400 mt-1">
-                          <MapPin size={14} />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                            大致区域（可选填）
-                          </p>
-                          <input
-                            value={wishForm.area}
-                            onChange={e =>
-                              setWishForm(prev => ({ ...prev, area: e.target.value }))
-                            }
-                            placeholder="例如：徐汇滨江 / 朝阳公园 / 线上"
-                            className="w-full bg-transparent text-xs font-bold text-slate-800 outline-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    {wishError && (
-                      <p className="text-[10px] font-black text-red-500 bg-red-50 border border-red-100 rounded-2xl px-4 py-2">
-                        {wishError}
-                      </p>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={wishLoading}
-                      className="w-full py-5 bg-[#108542] text-white rounded-2xl font-black text-sm shadow-xl active:scale-95 transition-all disabled:opacity-70 flex items-center justify-center gap-2"
-                    >
-                      {wishLoading && <Loader2 size={16} className="animate-spin" />}
-                      发布心愿 · 匹配局长
-                    </button>
-                  </form>
-
-                  {matchedCurators.length > 0 && (
-                    <div className="mt-6 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                          为你匹配到的局长
-                        </p>
-                        <span className="text-[9px] text-slate-300 font-black">
-                          {matchedCurators.length} 位
-                        </span>
-                      </div>
-                      <div className="space-y-3 max-h-64 overflow-y-auto no-scrollbar">
-                        {matchedCurators.map(c => (
-                          <div
-                            key={c.id}
-                            className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3"
-                          >
-                            <div className="w-10 h-10 rounded-2xl overflow-hidden bg-slate-200 flex-shrink-0">
-                              <img
-                                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.name}`}
-                                alt={c.name}
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-1">
-                                <div>
-                                  <p className="text-xs font-black text-slate-900">{c.name}</p>
-                                  <p className="text-[9px] text-slate-400 font-black">
-                                    {c.title}
-                                  </p>
-                                </div>
-                                <span className="text-[9px] text-[#108542] font-black px-2 py-1 bg-green-50 rounded-full">
-                                  契合度 {c.matchScore}%
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {(c.tags || []).map(tag => (
-                                  <span
-                                    key={tag}
-                                    className="px-2 py-0.5 rounded-full bg-white text-[8px] font-black text-slate-400 border border-slate-100"
-                                  >
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {showPlaceOnboard && (
               <PlaceOnboardModal
@@ -5349,7 +5089,7 @@ export default function App() {
                     handleCreateActivity({
                       source: 'wish_proposal',
                       wish: wishForPlaceOnboard,
-                      place: createdPlace,
+                      place: newPlace,
                     });
                     setWishForPlaceOnboard(null);
                   }
